@@ -2947,6 +2947,7 @@ name = "mkave"
 version = "0.1.0"
 dependencies = [
  "cellular",
+ "rand",
 ]
 
 [[package]]
@@ -4510,6 +4511,8 @@ dependencies = [
  "bevy",
  "bevy_egui",
  "cellular",
+ "rand_chacha",
+ "rand_core",
 ]
 
 [[package]]

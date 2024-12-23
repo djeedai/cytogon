@@ -6,6 +6,8 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use cellular::*;
+use rand_chacha::ChaCha8Rng;
+use rand_core::SeedableRng as _;
 
 #[derive(Clone, Copy, PartialEq)]
 struct Config2d {
@@ -47,6 +49,7 @@ impl Default for ConfigNd {
 
 #[derive(Resource, Clone, PartialEq)]
 struct Config {
+    pub seed: u64,
     pub auto_regenerate: bool,
     pub fill_rate: f32,
     pub smooth_iter: i32,
@@ -58,6 +61,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            seed: 42,
             auto_regenerate: true,
             fill_rate: 0.45,
             smooth_iter: 1,
@@ -108,19 +112,21 @@ fn setup(
     ));
 
     // light
-    let mut transform = Transform::from_xyz(0.0, 48.0, 16.0);
-    transform.rotate_x(0.1);
-    transform.rotate_z(0.15);
     commands.spawn((
         DirectionalLight {
+            color: LinearRgba::rgb(1.0, 0.8, 0.8).into(),
             shadows_enabled: true,
             ..default()
         },
-        // PointLight {
-        //     shadows_enabled: true,
-        //     ..default()
-        // },
-        transform,
+        Transform::from_xyz(-30.0, 48.0, 16.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+    commands.spawn((
+        DirectionalLight {
+            color: LinearRgba::rgb(0.8, 0.8, 1.0).into(),
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(50.0, -32.0, -16.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
     // rendering data for cubes
@@ -174,14 +180,14 @@ fn generate(mut commands: Commands, config: Res<Config>, q_root: Query<Entity, W
     // Spawn new cubes
     cmd.with_children(|parent| match &config.config_nd {
         ConfigNd::D3(config_3d) => {
-            let mut cave = Cave3::new(config_3d.size, config.fill_rate);
-
+            let mut cave = Grid3::new(config_3d.size);
+            let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
+            cave.fill_rand(config.fill_rate, &mut prng);
             for _ in 0..config.smooth_iter {
                 cave.smooth();
             }
 
             let offset = -config_3d.size.as_vec3() / 2.;
-
             for k in 0..config_3d.size.z {
                 for j in 0..config_3d.size.y {
                     for i in 0..config_3d.size.x {
@@ -202,7 +208,9 @@ fn generate(mut commands: Commands, config: Res<Config>, q_root: Query<Entity, W
         }
 
         ConfigNd::D2(config_2d) => {
-            let mut cave = Cave2::new(config_2d.size, config.fill_rate);
+            let mut cave = Grid2::new(config_2d.size);
+            let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
+            cave.fill_rand(config.fill_rate, &mut prng);
         }
     });
 }
@@ -215,6 +223,10 @@ fn orbit_camera(
     mouse_scroll: Res<AccumulatedMouseScroll>,
     time: Res<Time>,
 ) {
+    if !mouse_buttons.pressed(MouseButton::Right) {
+        return;
+    }
+
     let delta = -mouse_motion.delta;
     // let mut delta_roll = 0.0;
 

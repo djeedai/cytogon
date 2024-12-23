@@ -7,3 +7,5 @@ edition = "2021"
 cellular = { path = "../cellular" }
 bevy = "0.15"
 bevy_egui = "0.31.1"
+rand_core = "0.6.4"
+rand_chacha = "0.3.1"

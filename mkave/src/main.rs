@@ -3,8 +3,9 @@ use cellular::*;
 fn main() {
     println!("cave");
 
-    //let mut cave = Cave2::new(UVec2::new(128, 32), 0.45);
-    let mut cave = Cave3::new(UVec3::new(8, 8, 3), 0.45);
+    //let mut cave = Grid2::new(UVec2::new(128, 32), 0.45);
+    let mut cave = Grid3::new(UVec3::new(8, 8, 3));
+    cave.fill_rand(0.45, rand::thread_rng());
     println!("{}", export_txt3(cave.size, &cave.data));
     cave.smooth();
     // cave.smooth();
