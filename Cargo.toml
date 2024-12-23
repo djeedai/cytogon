@@ -1,8 +1,5 @@
-[package]
-name = "cave"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-glam = "0.29.2"
-rand = "0.8.5"
+[workspace]
+resolver = "2"
+members = [
+    "cellular", "mkave", "viewer",
+]
