@@ -6,3 +6,8 @@ edition = "2021"
 [dependencies]
 glam = "0.29.2"
 rand = "0.8.5"
+tracing = { version = "0.1.41", optional = true }
+
+[features]
+default = []
+trace = ["tracing"]

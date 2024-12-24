@@ -1,6 +1,9 @@
 pub use glam::{IVec2, IVec3, UVec2, UVec3};
 use rand::{Rng, RngCore};
 
+#[cfg(feature = "trace")]
+use tracing::info_span;
+
 #[derive(Clone)]
 pub struct Grid2 {
     pub size: UVec2,
@@ -13,11 +16,17 @@ impl Grid2 {
     }
 
     pub fn fill(&mut self, value: bool) {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("fill2").entered();
+
         self.data
             .resize((self.size.x * self.size.y) as usize, value);
     }
 
     pub fn fill_rand(&mut self, fill_ratio: f32, mut prng: impl RngCore) {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("fill_rand2").entered();
+
         self.data = fill(self.size.extend(1), fill_ratio, &mut prng);
     }
 
@@ -42,6 +51,9 @@ impl Grid2 {
     }
 
     pub fn smooth(&mut self) {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("smooth2").entered();
+
         let imax = self.size.x - 1;
         let jmax = self.size.y - 1;
         let default = false;
@@ -95,11 +107,17 @@ impl Grid3 {
     }
 
     pub fn fill(&mut self, value: bool) {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("fill3").entered();
+
         self.data
             .resize((self.size.x * self.size.y * self.size.z) as usize, value);
     }
 
     pub fn fill_rand(&mut self, fill_ratio: f32, mut prng: impl RngCore) {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("fill_rand3").entered();
+
         self.data = fill(self.size, fill_ratio, &mut prng);
     }
 
@@ -140,6 +158,9 @@ impl Grid3 {
     }
 
     pub fn smooth(&mut self) {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("smooth3").entered();
+
         let imax = self.size.x - 1;
         let jmax = self.size.y - 1;
         let kmax = self.size.z - 1;
