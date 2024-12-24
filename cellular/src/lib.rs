@@ -1,6 +1,7 @@
 pub use glam::{IVec2, IVec3, UVec2, UVec3};
 use rand::{Rng, RngCore};
 
+#[derive(Clone)]
 pub struct Grid2 {
     pub size: UVec2,
     pub data: Vec<bool>,
@@ -44,6 +45,7 @@ impl Grid2 {
         let imax = self.size.x - 1;
         let jmax = self.size.y - 1;
         let default = false;
+        let old_grid = self.clone();
         for j in 0..=jmax {
             for i in 0..=imax {
                 let pos = IVec2::new(i as i32, j as i32);
@@ -52,7 +54,7 @@ impl Grid2 {
                     *cell = true;
                 } else {
                     // 5-8/5-8/2/M (?)
-                    let c = self.count_neighbors(pos, default);
+                    let c = old_grid.count_neighbors(pos, default);
                     if c > 4 {
                         let cell = self.cell_mut(pos).unwrap();
                         *cell = true;
@@ -81,6 +83,7 @@ impl Grid2 {
     }
 }
 
+#[derive(Clone)]
 pub struct Grid3 {
     pub size: UVec3,
     pub data: Vec<bool>,
@@ -141,6 +144,7 @@ impl Grid3 {
         let jmax = self.size.y - 1;
         let kmax = self.size.z - 1;
         let default = false;
+        let old_grid = self.clone();
         for k in 0..=kmax {
             for j in 0..=jmax {
                 for i in 0..=imax {
@@ -152,7 +156,7 @@ impl Grid3 {
                         *cell = true;
                     } else {
                         // 13-26/13-14,17-19/2/M
-                        let c = self.count_neighbors(pos, default);
+                        let c = old_grid.count_neighbors(pos, default);
                         let cell = self.cell_mut(pos).unwrap();
                         if *cell {
                             // Alive cell with 13+ neighbors survive

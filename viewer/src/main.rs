@@ -1,8 +1,10 @@
 use std::{f32::consts::FRAC_PI_2, ops::Range};
 
 use bevy::{
+    asset::RenderAssetUsages,
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     prelude::*,
+    render::mesh::PrimitiveTopology,
 };
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use cellular::*;
@@ -63,11 +65,31 @@ impl Default for Config {
         Self {
             seed: 42,
             auto_regenerate: true,
-            fill_rate: 0.45,
-            smooth_iter: 1,
+            fill_rate: 0.70,
+            smooth_iter: 4,
             config_nd: default(),
             mesh: default(),
             material: default(),
+        }
+    }
+}
+
+impl Config {
+    pub fn default_2d() -> Self {
+        Self {
+            fill_rate: 0.45,
+            smooth_iter: 1,
+            config_nd: ConfigNd::D2(default()),
+            ..default()
+        }
+    }
+
+    pub fn default_3d() -> Self {
+        Self {
+            fill_rate: 0.70,
+            smooth_iter: 4,
+            config_nd: ConfigNd::D3(default()),
+            ..default()
         }
     }
 }
@@ -134,7 +156,13 @@ fn setup(
     config.material = materials.add(Color::srgb_u8(124, 144, 255));
 
     // object root
-    commands.spawn((Transform::IDENTITY, Visibility::Visible, Root));
+    //commands.spawn((Transform::IDENTITY, Visibility::Visible, Root));
+    commands.spawn((
+        Transform::IDENTITY,
+        Mesh3d(config.mesh.clone()),
+        MeshMaterial3d(config.material.clone()),
+        Root,
+    ));
 }
 
 /// Helper system to enable closing the example application by pressing the
@@ -155,6 +183,11 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
             config.set_changed();
         }
 
+        if let ConfigNd::D3(config_3d) = &mut old_config.config_nd {
+            ui.add(egui::Slider::new(&mut config_3d.size.x, 4..=128).text("Size"));
+            config_3d.size = UVec3::splat(config_3d.size.x);
+        }
+
         ui.separator();
 
         ui.label("Initial fill");
@@ -168,7 +201,62 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
     });
 }
 
-fn generate(mut commands: Commands, config: Res<Config>, q_root: Query<Entity, With<Root>>) {
+fn generate_mesh(
+    mut meshes: ResMut<Assets<Mesh>>,
+    config: Res<Config>,
+    q_root: Query<&Mesh3d, With<Root>>,
+) {
+    if !config.is_changed() || !config.auto_regenerate {
+        return;
+    }
+
+    let handle = q_root.single();
+    let mesh = meshes.get_mut(handle).unwrap();
+
+    // Spawn new cubes
+    match &config.config_nd {
+        ConfigNd::D3(config_3d) => {
+            let cave = {
+                #[cfg(feature = "trace")]
+                let _span = info_span!("generate").entered();
+
+                let mut cave = Grid3::new(config_3d.size);
+                {
+                    #[cfg(feature = "trace")]
+                    let _span = info_span!("fill_rand").entered();
+
+                    let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
+                    cave.fill_rand(config.fill_rate, &mut prng);
+                }
+
+                for _ in 0..config.smooth_iter {
+                    #[cfg(feature = "trace")]
+                    let _span = info_span!("smooth").entered();
+
+                    cave.smooth();
+                }
+
+                cave
+            };
+
+            {
+                #[cfg(feature = "trace")]
+                let _span = info_span!("build_mesh").entered();
+
+                //let offset = -config_3d.size.as_vec3() / 2.;
+                *mesh = build_mesh(&cave);
+            }
+        }
+
+        ConfigNd::D2(config_2d) => {
+            let mut cave = Grid2::new(config_2d.size);
+            let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
+            cave.fill_rand(config.fill_rate, &mut prng);
+        }
+    }
+}
+
+fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Entity, With<Root>>) {
     if !config.is_changed() || !config.auto_regenerate {
         return;
     }
@@ -213,6 +301,127 @@ fn generate(mut commands: Commands, config: Res<Config>, q_root: Query<Entity, W
             cave.fill_rand(config.fill_rate, &mut prng);
         }
     });
+}
+
+fn build_mesh(grid: &Grid3) -> Mesh {
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+
+    let mut vertices = Vec::with_capacity(1024);
+    let offset = -grid.size.as_vec3() / 2.;
+    // X faces
+    for i in 0..=grid.size.x {
+        for k in 0..grid.size.z {
+            for j in 0..grid.size.y {
+                let pos = IVec3::new(i as i32, j as i32, k as i32);
+                let cur = grid.cell(pos).unwrap_or(false);
+                let prev = if i > 0 {
+                    grid.cell(pos - IVec3::X).unwrap_or(false)
+                } else {
+                    false
+                };
+                if cur != prev {
+                    let half_size = Vec3::new(0.5, 0.5, 0.5);
+                    let min = offset + pos.as_vec3() - half_size;
+
+                    if prev {
+                        vertices.push(min);
+                        vertices.push(min + Vec3::Y);
+                        vertices.push(min + Vec3::Z);
+
+                        vertices.push(min + Vec3::Z);
+                        vertices.push(min + Vec3::Y);
+                        vertices.push(min + Vec3::Y + Vec3::Z);
+                    } else {
+                        vertices.push(min);
+                        vertices.push(min + Vec3::Z);
+                        vertices.push(min + Vec3::Y);
+
+                        vertices.push(min + Vec3::Y);
+                        vertices.push(min + Vec3::Z);
+                        vertices.push(min + Vec3::Y + Vec3::Z);
+                    }
+                }
+            }
+        }
+    }
+    // Y faces
+    for j in 0..=grid.size.y {
+        for k in 0..grid.size.z {
+            for i in 0..grid.size.x {
+                let pos = IVec3::new(i as i32, j as i32, k as i32);
+                let cur = grid.cell(pos).unwrap_or(false);
+                let prev = if j > 0 {
+                    grid.cell(pos - IVec3::Y).unwrap_or(false)
+                } else {
+                    false
+                };
+                if cur != prev {
+                    let half_size = Vec3::new(0.5, 0.5, 0.5);
+                    let min = offset + pos.as_vec3() - half_size;
+
+                    if prev {
+                        vertices.push(min);
+                        vertices.push(min + Vec3::Z);
+                        vertices.push(min + Vec3::X);
+
+                        vertices.push(min + Vec3::X);
+                        vertices.push(min + Vec3::Z);
+                        vertices.push(min + Vec3::X + Vec3::Z);
+                    } else {
+                        vertices.push(min);
+                        vertices.push(min + Vec3::X);
+                        vertices.push(min + Vec3::Z);
+
+                        vertices.push(min + Vec3::Z);
+                        vertices.push(min + Vec3::X);
+                        vertices.push(min + Vec3::X + Vec3::Z);
+                    }
+                }
+            }
+        }
+    }
+    // Z faces
+    for k in 0..=grid.size.z {
+        for j in 0..grid.size.y {
+            for i in 0..grid.size.x {
+                let pos = IVec3::new(i as i32, j as i32, k as i32);
+                let cur = grid.cell(pos).unwrap_or(false);
+                let prev = if k > 0 {
+                    grid.cell(pos - IVec3::Z).unwrap_or(false)
+                } else {
+                    false
+                };
+                if cur != prev {
+                    let half_size = Vec3::new(0.5, 0.5, 0.5);
+                    let min = offset + pos.as_vec3() - half_size;
+
+                    if prev {
+                        vertices.push(min);
+                        vertices.push(min + Vec3::X);
+                        vertices.push(min + Vec3::Y);
+
+                        vertices.push(min + Vec3::Y);
+                        vertices.push(min + Vec3::X);
+                        vertices.push(min + Vec3::X + Vec3::Y);
+                    } else {
+                        vertices.push(min);
+                        vertices.push(min + Vec3::Y);
+                        vertices.push(min + Vec3::X);
+
+                        vertices.push(min + Vec3::X);
+                        vertices.push(min + Vec3::Y);
+                        vertices.push(min + Vec3::X + Vec3::Y);
+                    }
+                }
+            }
+        }
+    }
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+
+    mesh.with_computed_flat_normals()
 }
 
 fn orbit_camera(
@@ -283,6 +492,7 @@ fn main() {
         .add_systems(Update, close_on_esc)
         .add_systems(Update, ui_config)
         .add_systems(Update, orbit_camera)
-        .add_systems(PostUpdate, generate)
+        //.add_systems(PostUpdate, generate_cubes)
+        .add_systems(PostUpdate, generate_mesh)
         .run();
 }
