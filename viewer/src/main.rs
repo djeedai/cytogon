@@ -279,15 +279,12 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
             for k in 0..config_3d.size.z {
                 for j in 0..config_3d.size.y {
                     for i in 0..config_3d.size.x {
-                        let index =
-                            k * config_3d.size.y * config_3d.size.x + j * config_3d.size.x + i;
-                        if cave.data[index as usize] {
+                        let pos = IVec3::new(i as i32, j as i32, k as i32);
+                        if cave.cell(pos).unwrap_or(false) {
                             parent.spawn((
                                 Mesh3d(config.mesh.clone()),
                                 MeshMaterial3d(config.material.clone()),
-                                Transform::from_translation(
-                                    offset + Vec3::new(i as f32, j as f32, k as f32),
-                                ),
+                                Transform::from_translation(offset + pos.as_vec3()),
                             ));
                         }
                     }
@@ -309,7 +306,11 @@ fn build_mesh(grid: &Grid3) -> Mesh {
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
 
-    let mut vertices = Vec::with_capacity(1024);
+    let x = grid.size.x as usize;
+    let y = grid.size.y as usize;
+    let z = grid.size.z as usize;
+    let capacity = ((z + 1) * x * y + (y + 1) * z * x + (x + 1) * z * y) * 6;
+    let mut vertices = Vec::with_capacity(capacity);
     let offset = -grid.size.as_vec3() / 2.;
     // X faces
     for i in 0..=grid.size.x {
@@ -449,9 +450,10 @@ fn orbit_camera(
     let mut distance = camera.translation.length();
     distance -= mouse_scroll.delta.y * camera_settings.distance_speed;
 
-    // Mouse motion is one of the few inputs that should not be multiplied by delta time,
-    // as we are already receiving the full movement since the last frame was rendered. Multiplying
-    // by delta time here would make the movement slower that it should be.
+    // Mouse motion is one of the few inputs that should not be multiplied by delta
+    // time, as we are already receiving the full movement since the last frame
+    // was rendered. Multiplying by delta time here would make the movement
+    // slower that it should be.
     let delta_pitch = delta.y * camera_settings.pitch_speed;
     let delta_yaw = delta.x * camera_settings.yaw_speed;
 
@@ -461,7 +463,8 @@ fn orbit_camera(
     // Obtain the existing pitch, yaw, and roll values from the transform.
     let (yaw, pitch, roll) = camera.rotation.to_euler(EulerRot::YXZ);
 
-    // Establish the new yaw and pitch, preventing the pitch value from exceeding our limits.
+    // Establish the new yaw and pitch, preventing the pitch value from exceeding
+    // our limits.
     let pitch = (pitch + delta_pitch).clamp(
         camera_settings.pitch_range.start,
         camera_settings.pitch_range.end,
@@ -470,8 +473,9 @@ fn orbit_camera(
     let yaw = yaw + delta_yaw;
     camera.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
 
-    // Adjust the translation to maintain the correct orientation toward the orbit target.
-    // In our example it's a static target, but this could easily be customized.
+    // Adjust the translation to maintain the correct orientation toward the orbit
+    // target. In our example it's a static target, but this could easily be
+    // customized.
     let target = Vec3::ZERO;
     camera.translation = target - camera.forward() * distance;
 }
