@@ -206,7 +206,7 @@ fn generate_mesh(
     config: Res<Config>,
     q_root: Query<&Mesh3d, With<Root>>,
 ) {
-    if !config.is_changed() || !config.auto_regenerate {
+    if !config.is_changed() {
         return;
     }
 
