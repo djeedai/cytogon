@@ -4,7 +4,7 @@ use bevy::{
     asset::RenderAssetUsages,
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     prelude::*,
-    render::mesh::PrimitiveTopology,
+    render::mesh::{PrimitiveTopology, VertexAttributeValues},
 };
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use cellular::*;
@@ -241,10 +241,10 @@ fn generate_mesh(
 
             {
                 #[cfg(feature = "trace")]
-                let _span = info_span!("build_mesh").entered();
+                let _span = info_span!("rebuild_mesh").entered();
 
                 //let offset = -config_3d.size.as_vec3() / 2.;
-                *mesh = build_mesh(&cave);
+                rebuild_mesh(&cave, mesh);
             }
         }
 
@@ -300,129 +300,199 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
     });
 }
 
-fn build_mesh(grid: &Grid3) -> Mesh {
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+fn rebuild_mesh(grid: &Grid3, mesh: &mut Mesh) {
+    assert_eq!(mesh.primitive_topology(), PrimitiveTopology::TriangleList);
+    assert_eq!(
+        mesh.asset_usage,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD
     );
+
+    // Ensure the geometry is not indexed, otherwise compute_flat_normals() doesn't
+    // work
+    {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("remove_unused").entered();
+
+        mesh.remove_indices();
+        mesh.remove_attribute(Mesh::ATTRIBUTE_UV_0);
+    }
 
     let x = grid.size.x as usize;
     let y = grid.size.y as usize;
     let z = grid.size.z as usize;
     let capacity = ((z + 1) * x * y + (y + 1) * z * x + (x + 1) * z * y) * 6;
-    let mut vertices = Vec::with_capacity(capacity);
-    let offset = -grid.size.as_vec3() / 2.;
-    // X faces
-    for i in 0..=grid.size.x {
-        for k in 0..grid.size.z {
+
+    {
+        #[cfg(feature = "trace")]
+        let _span = info_span!("build").entered();
+
+        // Steal position array
+        let values = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION).unwrap();
+        let VertexAttributeValues::Float32x3(vertices) = values else {
+            panic!("Mesh doesn't have Float32x3 vertices.");
+        };
+        let mut positions = std::mem::take(vertices);
+        positions.reserve(capacity / 8); // heuristic
+        positions.truncate(0);
+
+        // Steal normal array
+        let values = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL).unwrap();
+        let VertexAttributeValues::Float32x3(normals) = values else {
+            panic!("Mesh doesn't have Float32x3 normals.");
+        };
+        let mut normals = std::mem::take(normals);
+        normals.reserve(capacity / 8); // heuristic
+        normals.truncate(0);
+
+        let offset = -grid.size.as_vec3() / 2.;
+
+        // X faces
+        for i in 0..=grid.size.x {
+            for k in 0..grid.size.z {
+                for j in 0..grid.size.y {
+                    let pos = IVec3::new(i as i32, j as i32, k as i32);
+                    let cur = grid.cell(pos).unwrap_or(false);
+                    let prev = if i > 0 {
+                        grid.cell(pos - IVec3::X).unwrap_or(false)
+                    } else {
+                        false
+                    };
+                    if cur != prev {
+                        let half_size = Vec3::new(0.5, 0.5, 0.5);
+                        let min = offset + pos.as_vec3() - half_size;
+
+                        let mut n = [0f32; 3];
+                        if prev {
+                            n[0] = 1.0;
+                            positions.push(min.to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::Y + Vec3::Z).to_array());
+                        } else {
+                            n[0] = -1.0;
+                            positions.push(min.to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::Y + Vec3::Z).to_array());
+                        }
+
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                    }
+                }
+            }
+        }
+        // Y faces
+        for j in 0..=grid.size.y {
+            for k in 0..grid.size.z {
+                for i in 0..grid.size.x {
+                    let pos = IVec3::new(i as i32, j as i32, k as i32);
+                    let cur = grid.cell(pos).unwrap_or(false);
+                    let prev = if j > 0 {
+                        grid.cell(pos - IVec3::Y).unwrap_or(false)
+                    } else {
+                        false
+                    };
+                    if cur != prev {
+                        let half_size = Vec3::new(0.5, 0.5, 0.5);
+                        let min = offset + pos.as_vec3() - half_size;
+
+                        let mut n = [0f32; 3];
+                        if prev {
+                            n[1] = 1.0;
+                            positions.push(min.to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::X + Vec3::Z).to_array());
+                        } else {
+                            n[1] = -1.0;
+                            positions.push(min.to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::Z).to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::X + Vec3::Z).to_array());
+                        }
+
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                    }
+                }
+            }
+        }
+        // Z faces
+        for k in 0..=grid.size.z {
             for j in 0..grid.size.y {
-                let pos = IVec3::new(i as i32, j as i32, k as i32);
-                let cur = grid.cell(pos).unwrap_or(false);
-                let prev = if i > 0 {
-                    grid.cell(pos - IVec3::X).unwrap_or(false)
-                } else {
-                    false
-                };
-                if cur != prev {
-                    let half_size = Vec3::new(0.5, 0.5, 0.5);
-                    let min = offset + pos.as_vec3() - half_size;
-
-                    if prev {
-                        vertices.push(min);
-                        vertices.push(min + Vec3::Y);
-                        vertices.push(min + Vec3::Z);
-
-                        vertices.push(min + Vec3::Z);
-                        vertices.push(min + Vec3::Y);
-                        vertices.push(min + Vec3::Y + Vec3::Z);
+                for i in 0..grid.size.x {
+                    let pos = IVec3::new(i as i32, j as i32, k as i32);
+                    let cur = grid.cell(pos).unwrap_or(false);
+                    let prev = if k > 0 {
+                        grid.cell(pos - IVec3::Z).unwrap_or(false)
                     } else {
-                        vertices.push(min);
-                        vertices.push(min + Vec3::Z);
-                        vertices.push(min + Vec3::Y);
+                        false
+                    };
+                    if cur != prev {
+                        let half_size = Vec3::new(0.5, 0.5, 0.5);
+                        let min = offset + pos.as_vec3() - half_size;
 
-                        vertices.push(min + Vec3::Y);
-                        vertices.push(min + Vec3::Z);
-                        vertices.push(min + Vec3::Y + Vec3::Z);
+                        let mut n = [0f32; 3];
+                        if prev {
+                            n[2] = 1.0;
+                            positions.push(min.to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::X + Vec3::Y).to_array());
+                        } else {
+                            n[2] = -1.0;
+                            positions.push(min.to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::X).to_array());
+                            positions.push((min + Vec3::Y).to_array());
+                            positions.push((min + Vec3::X + Vec3::Y).to_array());
+                        }
+
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
+                        normals.push(n);
                     }
                 }
             }
         }
+
+        // Restore positions array
+        let values = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION).unwrap();
+        let VertexAttributeValues::Float32x3(dummy) = values else {
+            panic!("Mesh doesn't have Float32x3 vertices.");
+        };
+        std::mem::swap(dummy, &mut positions);
+
+        // Restore normals array
+        let values = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL).unwrap();
+        let VertexAttributeValues::Float32x3(dummy) = values else {
+            panic!("Mesh doesn't have Float32x3 normals.");
+        };
+        std::mem::swap(dummy, &mut normals);
     }
-    // Y faces
-    for j in 0..=grid.size.y {
-        for k in 0..grid.size.z {
-            for i in 0..grid.size.x {
-                let pos = IVec3::new(i as i32, j as i32, k as i32);
-                let cur = grid.cell(pos).unwrap_or(false);
-                let prev = if j > 0 {
-                    grid.cell(pos - IVec3::Y).unwrap_or(false)
-                } else {
-                    false
-                };
-                if cur != prev {
-                    let half_size = Vec3::new(0.5, 0.5, 0.5);
-                    let min = offset + pos.as_vec3() - half_size;
-
-                    if prev {
-                        vertices.push(min);
-                        vertices.push(min + Vec3::Z);
-                        vertices.push(min + Vec3::X);
-
-                        vertices.push(min + Vec3::X);
-                        vertices.push(min + Vec3::Z);
-                        vertices.push(min + Vec3::X + Vec3::Z);
-                    } else {
-                        vertices.push(min);
-                        vertices.push(min + Vec3::X);
-                        vertices.push(min + Vec3::Z);
-
-                        vertices.push(min + Vec3::Z);
-                        vertices.push(min + Vec3::X);
-                        vertices.push(min + Vec3::X + Vec3::Z);
-                    }
-                }
-            }
-        }
-    }
-    // Z faces
-    for k in 0..=grid.size.z {
-        for j in 0..grid.size.y {
-            for i in 0..grid.size.x {
-                let pos = IVec3::new(i as i32, j as i32, k as i32);
-                let cur = grid.cell(pos).unwrap_or(false);
-                let prev = if k > 0 {
-                    grid.cell(pos - IVec3::Z).unwrap_or(false)
-                } else {
-                    false
-                };
-                if cur != prev {
-                    let half_size = Vec3::new(0.5, 0.5, 0.5);
-                    let min = offset + pos.as_vec3() - half_size;
-
-                    if prev {
-                        vertices.push(min);
-                        vertices.push(min + Vec3::X);
-                        vertices.push(min + Vec3::Y);
-
-                        vertices.push(min + Vec3::Y);
-                        vertices.push(min + Vec3::X);
-                        vertices.push(min + Vec3::X + Vec3::Y);
-                    } else {
-                        vertices.push(min);
-                        vertices.push(min + Vec3::Y);
-                        vertices.push(min + Vec3::X);
-
-                        vertices.push(min + Vec3::X);
-                        vertices.push(min + Vec3::Y);
-                        vertices.push(min + Vec3::X + Vec3::Y);
-                    }
-                }
-            }
-        }
-    }
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-
-    mesh.with_computed_flat_normals()
 }
 
 fn orbit_camera(
