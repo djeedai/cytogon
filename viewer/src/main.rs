@@ -190,7 +190,9 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
         ui.label("Initial fill");
         ui.indent(1, |ui| {
             ui.add(egui::Slider::new(&mut old_config.fill_rate, 0.0..=1.0).text("Fill rate"));
-            ui.add(egui::Slider::new(&mut old_config.smooth_iter, 0..=5).text("Smooth iterations"));
+            ui.add(
+                egui::Slider::new(&mut old_config.smooth_iter, 0..=50).text("Smooth iterations"),
+            );
         });
 
         // Ensure we don't trigger the Bevy change detection if nothing changed
