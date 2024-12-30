@@ -27,12 +27,18 @@ impl Default for Config2d {
 #[derive(Clone, Copy, PartialEq)]
 struct Config3d {
     pub size: UVec3,
+    pub rule: Rule3,
 }
 
 impl Default for Config3d {
     fn default() -> Self {
         Self {
             size: UVec3::new(32, 32, 32),
+            // 13-26/13-14,17-19/2/M
+            rule: Rule3 {
+                birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
+                survive: (13u8..=26u8).into(),
+            },
         }
     }
 }
@@ -183,6 +189,40 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
         if let ConfigNd::D3(config_3d) = &mut old_config.config_nd {
             ui.add(egui::Slider::new(&mut config_3d.size.x, 4..=128).text("Size"));
             config_3d.size = UVec3::splat(config_3d.size.x);
+
+            ui.label("Birth");
+            let mut bits = config_3d.rule.birth.to_array();
+            ui.checkbox(&mut bits[0], "0");
+            ui.horizontal(|ui| {
+                for b in &mut bits[1..13] {
+                    ui.checkbox(b, "");
+                }
+                ui.checkbox(&mut bits[13], "13");
+            });
+            ui.horizontal(|ui| {
+                for b in &mut bits[14..26] {
+                    ui.checkbox(b, "");
+                }
+                ui.checkbox(&mut bits[26], "26");
+            });
+            config_3d.rule.birth = bits.into();
+
+            ui.label("Survive");
+            let mut bits = config_3d.rule.survive.to_array();
+            ui.checkbox(&mut bits[0], "0");
+            ui.horizontal(|ui| {
+                for b in &mut bits[1..13] {
+                    ui.checkbox(b, "");
+                }
+                ui.checkbox(&mut bits[13], "13");
+            });
+            ui.horizontal(|ui| {
+                for b in &mut bits[14..26] {
+                    ui.checkbox(b, "");
+                }
+                ui.checkbox(&mut bits[26], "26");
+            });
+            config_3d.rule.survive = bits.into();
         }
 
         ui.separator();
@@ -232,7 +272,7 @@ fn generate_mesh(
                     #[cfg(feature = "trace")]
                     let _span = info_span!("smooth").entered();
 
-                    cave.smooth();
+                    cave.smooth(&config_3d.rule);
                 }
 
                 cave
@@ -270,8 +310,13 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
             let mut cave = Grid3::new(config_3d.size);
             let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
             cave.fill_rand(config.fill_rate, &mut prng);
+            // 13-26/13-14,17-19/2/M
+            let rule = Rule3 {
+                birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
+                survive: (13u8..=26u8).into(),
+            };
             for _ in 0..config.smooth_iter {
-                cave.smooth();
+                cave.smooth(&rule);
             }
 
             let offset = -config_3d.size.as_vec3() / 2.;

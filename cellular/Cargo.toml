@@ -11,4 +11,5 @@ tracing = { version = "0.1.41", optional = true }
 
 [features]
 default = []
-trace = ["tracing"]
+# Emit tracing/profiling markers
+trace = ["dep:tracing"]
