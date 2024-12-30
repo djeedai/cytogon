@@ -27,4 +27,4 @@ for _ in 0..5 {
 }
 ```
 
-For a viewer (GUI), see the [🔬 μscope](https://github.com/djeedai/cytogon/uscope) repository ([📦`uscope`](https://crates.io/crates/uscope) crate).
+For a viewer (GUI), see the [🔬 μscope](https://github.com/djeedai/cytogon/tree/main/uscope) repository ([📦`uscope`](https://crates.io/crates/uscope) crate).
