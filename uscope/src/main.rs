@@ -33,7 +33,7 @@ struct Config3d {
 impl Default for Config3d {
     fn default() -> Self {
         Self {
-            size: UVec3::new(32, 32, 32),
+            size: UVec3::splat(64),
             rule: Rule3::SMOOTH,
         }
     }
@@ -67,8 +67,8 @@ impl Default for Config {
         Self {
             seed: 42,
             auto_regenerate: true,
-            fill_rate: 0.70,
-            smooth_iter: 4,
+            fill_rate: 0.508,
+            smooth_iter: 20,
             config_nd: default(),
             mesh: default(),
             material: default(),
@@ -77,6 +77,7 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Default configuration for 2D.
     pub fn default_2d() -> Self {
         Self {
             fill_rate: 0.45,
@@ -86,10 +87,11 @@ impl Config {
         }
     }
 
+    /// Default configuration for 3D.
     pub fn default_3d() -> Self {
         Self {
-            fill_rate: 0.70,
-            smooth_iter: 4,
+            fill_rate: 0.508,
+            smooth_iter: 20,
             config_nd: ConfigNd::D3(default()),
             ..default()
         }
@@ -176,50 +178,11 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
     egui::Window::new("Config").show(contexts.ctx_mut(), |ui| {
         let mut old_config = config.clone();
 
-        ui.checkbox(&mut old_config.auto_regenerate, "Auto-regenerate");
-        if !old_config.auto_regenerate && ui.button("Regenerate").clicked() {
-            // Just "touch" the config to mark it changed, which will trigger a regenerate
-            config.set_changed();
-        }
-
-        if let ConfigNd::D3(config_3d) = &mut old_config.config_nd {
-            ui.add(egui::Slider::new(&mut config_3d.size.x, 4..=128).text("Size"));
-            config_3d.size = UVec3::splat(config_3d.size.x);
-
-            ui.label("Birth");
-            let mut bits = config_3d.rule.birth.to_array();
-            ui.checkbox(&mut bits[0], "0");
-            ui.horizontal(|ui| {
-                for b in &mut bits[1..13] {
-                    ui.checkbox(b, "");
-                }
-                ui.checkbox(&mut bits[13], "13");
-            });
-            ui.horizontal(|ui| {
-                for b in &mut bits[14..26] {
-                    ui.checkbox(b, "");
-                }
-                ui.checkbox(&mut bits[26], "26");
-            });
-            config_3d.rule.birth = bits.into();
-
-            ui.label("Survive");
-            let mut bits = config_3d.rule.survive.to_array();
-            ui.checkbox(&mut bits[0], "0");
-            ui.horizontal(|ui| {
-                for b in &mut bits[1..13] {
-                    ui.checkbox(b, "");
-                }
-                ui.checkbox(&mut bits[13], "13");
-            });
-            ui.horizontal(|ui| {
-                for b in &mut bits[14..26] {
-                    ui.checkbox(b, "");
-                }
-                ui.checkbox(&mut bits[26], "26");
-            });
-            config_3d.rule.survive = bits.into();
-        }
+        let mut size = match &old_config.config_nd {
+            ConfigNd::D2(config_2d) => config_2d.size.x,
+            ConfigNd::D3(config_3d) => config_3d.size.x,
+        };
+        ui.add(egui::Slider::new(&mut size, 4..=128).text("Size"));
 
         ui.separator();
 
@@ -230,6 +193,62 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
                 egui::Slider::new(&mut old_config.smooth_iter, 0..=50).text("Smooth iterations"),
             );
         });
+
+        ui.separator();
+
+        match &mut old_config.config_nd {
+            ConfigNd::D3(config_3d) => {
+                config_3d.size = UVec3::splat(size);
+
+                ui.label("Rule");
+                ui.indent(1, |ui| {
+                    ui.label("Birth");
+                    let mut bits = config_3d.rule.birth.to_array();
+                    ui.checkbox(&mut bits[0], "0");
+                    ui.horizontal(|ui| {
+                        for b in &mut bits[1..13] {
+                            ui.checkbox(b, "");
+                        }
+                        ui.checkbox(&mut bits[13], "13");
+                    });
+                    ui.horizontal(|ui| {
+                        for b in &mut bits[14..26] {
+                            ui.checkbox(b, "");
+                        }
+                        ui.checkbox(&mut bits[26], "26");
+                    });
+                    config_3d.rule.birth = bits.into();
+
+                    ui.label("Survive");
+                    let mut bits = config_3d.rule.survive.to_array();
+                    ui.checkbox(&mut bits[0], "0");
+                    ui.horizontal(|ui| {
+                        for b in &mut bits[1..13] {
+                            ui.checkbox(b, "");
+                        }
+                        ui.checkbox(&mut bits[13], "13");
+                    });
+                    ui.horizontal(|ui| {
+                        for b in &mut bits[14..26] {
+                            ui.checkbox(b, "");
+                        }
+                        ui.checkbox(&mut bits[26], "26");
+                    });
+                    config_3d.rule.survive = bits.into();
+                });
+            }
+            ConfigNd::D2(config_2d) => {
+                config_2d.size = UVec2::splat(size);
+            }
+        }
+
+        ui.separator();
+
+        ui.checkbox(&mut old_config.auto_regenerate, "Auto-regenerate");
+        if !old_config.auto_regenerate && ui.button("Regenerate").clicked() {
+            // Just "touch" the config to mark it changed, which will trigger a regenerate
+            config.set_changed();
+        }
 
         // Ensure we don't trigger the Bevy change detection if nothing changed
         config.set_if_neq(old_config);
