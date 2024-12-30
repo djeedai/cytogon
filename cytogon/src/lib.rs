@@ -8,6 +8,191 @@ use tracing::info_span;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod avx2;
 
+/// Bitset encoding a rule for a 2D cellular automaton.
+///
+/// Each bit represents whether the associated rule applies to a cell with the
+/// corresponding number of neighbors. The first / lowest bit corresponds to 0
+/// neighbor, the next bit to 1 neighbor, etc. until the maximum number of Moore
+/// neighbors (8).
+///
+/// # Construction
+///
+/// A new [`RuleBiset2`] can be constructed from:
+/// - Another instance (`Copy`).
+/// - A `u16` bit representation.
+///
+///   ```
+///   let r = RuleBitset2::from(0xF07u32);
+///   ```
+/// - An array of exactly 9 `bool`.
+///
+///   ```
+///   let r = RuleBitset2::from([true; 9]);
+///   ```
+/// - A slice of at most 9 `bool` (all missing elements are assumed `false`).
+///
+///   ```
+///   let r = RuleBitset2::from(&[true; 5]);
+///   ```
+/// - A `Range<u8>` or `RangeInclusive<u8>` of length up to 9, describing the
+///   `true` values.
+///
+///   ```
+///   let r = RuleBitset2::from(3u8..8u8);
+///   let r = RuleBitset2::from(3u8..=7u8);
+///   ```
+///
+/// - By combining 2 existing rules via the bitwise OR `|` operator.
+///
+///   ```
+///   let r1 = RuleBitset2::from(1u8..4u8);
+///   let r2 = RuleBitset2::from(7u8..=8u8);
+///   let r = r1 | r2;
+///   ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RuleBitset2(u16);
+
+impl RuleBitset2 {
+    /// Create a rule bitset from a bit representation.
+    ///
+    /// In general, prefer using `From<u16>` for clarity and conciseness. This
+    /// is mainly provided as fallback for `const` context.
+    pub const fn from_bits(bits: u16) -> Self {
+        assert!(
+            bits & 0xFE00u16 == 0,
+            "Invalid bit pattern: the top 7 bits must be zero."
+        );
+        Self(bits)
+    }
+
+    /// Create a rule bitset by OR'ing two existing bit representations.
+    ///
+    /// In general, prefer using the bitwise OR `|` operator for clarity and
+    /// conciseness. This is mainly provided as fallback for `const`
+    /// context.
+    pub const fn or_with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// Convert the rule to its bit representation.
+    ///
+    /// The returned `u16` always has its upper 7 bits set to zero. The lower 9
+    /// bits represent whether the associated rule applies to a cell with 0 to
+    /// 8 neighbors.
+    #[inline]
+    pub fn to_bits(&self) -> u16 {
+        self.0
+    }
+
+    /// Convert the rule to an array of `bool`s.
+    ///
+    /// The `bool` at index N corresponds to the N-th bit (from lowest to
+    /// highest) in the bit representation. The bits represent whether the
+    /// associated rule applies to a cell with 0 to 8 neighbors.
+    pub fn to_array(&self) -> [bool; 9] {
+        [
+            self.0 & 0x1 != 0,
+            self.0 & 0x2 != 0,
+            self.0 & 0x4 != 0,
+            self.0 & 0x8 != 0,
+            self.0 & 0x10 != 0,
+            self.0 & 0x20 != 0,
+            self.0 & 0x40 != 0,
+            self.0 & 0x80 != 0,
+            self.0 & 0x100 != 0,
+        ]
+    }
+}
+
+impl From<u16> for RuleBitset2 {
+    #[inline]
+    fn from(value: u16) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Range<u8>> for RuleBitset2 {
+    fn from(value: Range<u8>) -> Self {
+        assert!(value.end <= 8);
+        let mut bits = 0;
+        for b in value {
+            bits |= 1u16 << b;
+        }
+        Self(bits)
+    }
+}
+
+impl From<RangeInclusive<u8>> for RuleBitset2 {
+    fn from(value: RangeInclusive<u8>) -> Self {
+        assert!(*value.end() <= 8);
+        let mut bits = 0;
+        for b in value {
+            bits |= 1u16 << b;
+        }
+        Self(bits)
+    }
+}
+
+impl From<[bool; 9]> for RuleBitset2 {
+    fn from(value: [bool; 9]) -> Self {
+        let mut bit = 0;
+        let bits = value.iter().fold(0u16, move |acc, &b| {
+            let b = (b as u16) << bit;
+            bit += 1;
+            acc | b
+        });
+        Self(bits)
+    }
+}
+
+impl From<&[bool]> for RuleBitset2 {
+    fn from(value: &[bool]) -> Self {
+        assert!(value.len() <= 9);
+        let mut bit = 0;
+        let bits = value.iter().fold(0u16, move |acc, &b| {
+            let b = (b as u16) << bit;
+            bit += 1;
+            acc | b
+        });
+        Self(bits)
+    }
+}
+
+impl std::ops::BitOr for RuleBitset2 {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.to_bits() | rhs.to_bits())
+    }
+}
+
+/// 2D cellular automaton rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rule2 {
+    /// Birth rule, applied to dead cells to determine if they become alive.
+    pub birth: RuleBitset2,
+    /// Survive rule, applied to alive cells to determine if they remain alive.
+    pub survive: RuleBitset2,
+}
+
+impl Rule2 {
+    /// Smoothing rule S4-8/B5-8/2/M.
+    pub const SMOOTH: Rule2 = Rule2 {
+        birth: RuleBitset2::from_bits(0x1E0u16),   // 5..=8
+        survive: RuleBitset2::from_bits(0x1F0u16), // 4..=8
+    };
+
+    /// Create a CA rule from a pair of birth and survive rules.
+    pub fn new(birth: impl Into<RuleBitset2>, survive: impl Into<RuleBitset2>) -> Self {
+        Self {
+            birth: birth.into(),
+            survive: survive.into(),
+        }
+    }
+}
+
 /// 2D cellular automaton grid.
 ///
 /// Each cell in the grid is encoded as a boolean or bit, and can be alive
@@ -87,7 +272,7 @@ impl Grid2 {
         }
     }
 
-    pub fn apply_rule(&mut self) {
+    pub fn apply_rule(&mut self, rule: &Rule2) {
         #[cfg(feature = "trace")]
         let _span = info_span!("apply_rule2").entered();
 
@@ -95,19 +280,24 @@ impl Grid2 {
         let jmax = self.size.y - 1;
         let default = false;
         let old_grid = self.clone();
+        let survive = rule.survive.to_array();
+        let birth = rule.birth.to_array();
         for j in 0..=jmax {
             for i in 0..=imax {
                 let pos = IVec2::new(i as i32, j as i32);
                 if default && (i == 0 || j == 0 || i == imax || j == jmax) {
                     self.set_cell(pos, true);
                 } else {
-                    // 5-8/5-8/2/M (?)
                     let c = old_grid.count_neighbors(pos, default);
-                    if c > 4 {
-                        self.set_cell(pos, true);
-                    } else if c < 4 {
-                        self.set_cell(pos, false);
-                    }
+                    if self.cell(pos).unwrap_or(false) {
+                        if !survive[c as usize] {
+                            self.set_cell(pos, false);
+                        }
+                    } else {
+                        if birth[c as usize] {
+                            self.set_cell(pos, true);
+                        }
+                    };
                 }
             }
         }
@@ -1065,6 +1255,56 @@ fn fill_rand(capacity: usize, fill_ratio: f32, mut prng: impl RngCore) -> Vec<u6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rulebitset2() {
+        let r0 = RuleBitset2::from(0x01F0u16);
+        assert_eq!(r0, RuleBitset2::from_bits(0x01F0u16));
+        assert_eq!(r0.to_bits(), 0x01F0u16);
+        assert_eq!(r0.to_array()[0..4], [false; 4]);
+        assert_eq!(r0.to_array()[4..=8], [true; 5]);
+        assert_eq!(RuleBitset2::from(r0.to_array()), r0);
+
+        let r1 = RuleBitset2::from(1u8..4u8);
+        assert_eq!(r1, RuleBitset2::from_bits(0xEu16));
+        assert_eq!(r1.to_bits(), 0xEu16);
+        assert_eq!(r1.to_array()[0], false);
+        assert_eq!(r1.to_array()[1..4], [true; 3]);
+        assert_eq!(r1.to_array()[4..], [false; 5]);
+        assert_eq!(RuleBitset2::from(r1.to_array()), r1);
+
+        let r2 = RuleBitset2::from(2u8..=7u8);
+        assert_eq!(r2, RuleBitset2::from_bits(0xFCu16));
+        assert_eq!(r2.to_bits(), 0xFCu16);
+        assert_eq!(r2.to_array()[0..2], [false; 2]);
+        assert_eq!(r2.to_array()[2..=7], [true; 6]);
+        assert_eq!(r2.to_array()[8], false);
+        assert_eq!(RuleBitset2::from(r2.to_array()), r2);
+
+        let r12 = r1 | r2;
+        assert_eq!(r12, RuleBitset2::from_bits(0xFEu16));
+        assert_eq!(r12.to_bits(), 0xFEu16);
+        assert_eq!(r12.to_array()[0], false);
+        assert_eq!(r12.to_array()[1..=7], [true; 7]);
+        assert_eq!(r12.to_array()[8], false);
+        assert_eq!(RuleBitset2::from(r12.to_array()), r12);
+    }
+
+    #[test]
+    #[should_panic]
+    fn rulebitset2_frombits_invalid() {
+        let _r = RuleBitset2::from_bits(0xFFFFu16);
+    }
+
+    #[test]
+    fn rule2_smooth() {
+        // S5-8/B4-8/2/M
+        let rule = Rule2 {
+            birth: (5u8..=8u8).into(),
+            survive: (4u8..=8u8).into(),
+        };
+        assert_eq!(Rule2::SMOOTH, rule);
+    }
 
     #[test]
     fn rulebitset3() {
