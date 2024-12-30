@@ -9,16 +9,12 @@ fn main() {
     cave.fill_rand(0.6, rand::thread_rng());
     //println!("{}", export_txt3(cave.size, &cave.data));
 
-    // 13-26/13-14,17-19/2/M
-    let rule = Rule3 {
-        birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
-        survive: (13u8..=26u8).into(),
-    };
-    cave.smooth(&rule);
-    cave.smooth(&rule);
-    cave.smooth(&rule);
-    cave.smooth(&rule);
-    cave.smooth(&rule);
+    let rule = Rule3::SMOOTH;
+    cave.apply_rule(&rule);
+    cave.apply_rule(&rule);
+    cave.apply_rule(&rule);
+    cave.apply_rule(&rule);
+    cave.apply_rule(&rule);
     //println!("{}", export_txt2(cave.size, &cave.data));
     //println!("{}", export_txt3(cave.size, &cave.data));
 }

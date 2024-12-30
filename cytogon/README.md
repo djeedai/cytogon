@@ -19,7 +19,7 @@ cave.fill_rand(0.6, rand::thread_rng());
 let rule = Rule3 {
     birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
     survive: (13u8..=26u8).into(),
-};
+}; // == Rule3::SMOOTH
 
 // Iteratively apply the cellular automaton rule 5 times
 for _ in 0..5 {

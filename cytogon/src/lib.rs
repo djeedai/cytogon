@@ -1,6 +1,7 @@
+use std::ops::{Range, RangeInclusive};
+
 pub use glam::{IVec2, IVec3, UVec2, UVec3};
 use rand::{Rng, RngCore};
-use std::ops::{Range, RangeInclusive};
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
@@ -86,9 +87,9 @@ impl Grid2 {
         }
     }
 
-    pub fn smooth(&mut self) {
+    pub fn apply_rule(&mut self) {
         #[cfg(feature = "trace")]
-        let _span = info_span!("smooth2").entered();
+        let _span = info_span!("apply_rule2").entered();
 
         let imax = self.size.x - 1;
         let jmax = self.size.y - 1;
@@ -135,16 +136,88 @@ impl Grid2 {
     }
 }
 
+/// Bitset encoding a rule for a 3D cellular automaton.
+///
+/// Each bit represents whether the associated rule applies to a cell with the
+/// corresponding number of neighbors. The first / lowest bit corresponds to 0
+/// neighbor, the next bit to 1 neighbor, etc. until the maximum number of Moore
+/// neighbors (26).
+///
+/// # Construction
+///
+/// A new [`RuleBiset3`] can be constructed from:
+/// - Another instance (`Copy`).
+/// - A `u32` bit representation.
+///
+///   ```
+///   let r = RuleBitset3::from(0xF07u32);
+///   ```
+/// - An array of exactly 27 `bool`.
+///
+///   ```
+///   let r = RuleBitset3::from([true; 27]);
+///   ```
+/// - A slice of at most 27 `bool` (all missing elements are assumed `false`).
+///
+///   ```
+///   let r = RuleBitset3::from(&[true; 14]);
+///   ```
+/// - A `Range<u8>` or `RangeInclusive<u8>` of length up to 27, describing the
+///   `true` values.
+///
+///   ```
+///   let r = RuleBitset3::from(3u8..17u8);
+///   let r = RuleBitset3::from(13u8..=16u8);
+///   ```
+///
+/// - By combining 2 existing rules via the bitwise OR `|` operator.
+///
+///   ```
+///   let r1 = RuleBitset3::from(3u8..8u8);
+///   let r2 = RuleBitset3::from(13u8..=16u8);
+///   let r = r1 | r2;
+///   ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct RuleBitset3(u32);
 
 impl RuleBitset3 {
+    /// Create a rule bitset from a bit representation.
+    ///
+    /// In general, prefer using `From<u32>` for clarity and conciseness. This
+    /// is mainly provided as fallback for `const` context.
+    pub const fn from_bits(bits: u32) -> Self {
+        assert!(
+            bits & 0xF800_0000u32 == 0,
+            "Invalid bit pattern: the top 5 bits must be zero."
+        );
+        Self(bits)
+    }
+
+    /// Create a rule bitset by OR'ing two existing bit representations.
+    ///
+    /// In general, prefer using the bitwise OR `|` operator for clarity and
+    /// conciseness. This is mainly provided as fallback for `const`
+    /// context.
+    pub const fn or_with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// Convert the rule to its bit representation.
+    ///
+    /// The returned `u32` always has its upper 5 bits set to zero. The lower 27
+    /// bits represent whether the associated rule applies to a cell with 0 to
+    /// 26 neighbors.
     #[inline]
     pub fn to_bits(&self) -> u32 {
         self.0
     }
 
+    /// Convert the rule to an array of `bool`s.
+    ///
+    /// The `bool` at index N corresponds to the N-th bit (from lowest to
+    /// highest) in the bit representation. The bits represent whether the
+    /// associated rule applies to a cell with 0 to 26 neighbors.
     pub fn to_array(&self) -> [bool; 27] {
         [
             self.0 & 0x1 != 0,
@@ -241,14 +314,23 @@ impl std::ops::BitOr for RuleBitset3 {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// 3D cellular automaton rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rule3 {
+    /// Birth rule, applied to dead cells to determine if they become alive.
     pub birth: RuleBitset3,
+    /// Survive rule, applied to alive cells to determine if they remain alive.
     pub survive: RuleBitset3,
 }
 
 impl Rule3 {
-    /// Create a rule from two iterators over the
+    /// Smoothing rule S13-26/B13-14,17-19/2/M.
+    pub const SMOOTH: Rule3 = Rule3 {
+        birth: RuleBitset3::from_bits(0xE_6000u32), // 13..=14, 17..=19
+        survive: RuleBitset3::from_bits(0x7FF_E000u32), // 13..=26
+    };
+
+    /// Create a CA rule from a pair of birth and survive rules.
     pub fn new(birth: impl Into<RuleBitset3>, survive: impl Into<RuleBitset3>) -> Self {
         Self {
             birth: birth.into(),
@@ -358,21 +440,22 @@ impl Grid3 {
         }
     }
 
-    pub fn smooth(&mut self, rule: &Rule3) {
+    /// Apply the given cellular automaton rule once to the entire grid.
+    pub fn apply_rule(&mut self, rule: &Rule3) {
         // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         // {
         //     if is_x86_feature_detected!("avx2") {
-        //         return unsafe { avx2::smooth(self.size, &self.data[..], default) };
-        //     }
+        //         return unsafe { avx2::apply_rule(self.size, &self.data[..], default)
+        // };     }
         // }
 
-        self.smooth_ref(rule)
+        self.apply_rule_ref(rule)
     }
 
-    /// Reference single-threaded implementation of [`smooth()`]. Very slow.
-    pub fn smooth_ref(&mut self, rule: &Rule3) {
+    /// Reference single-threaded implementation of [`apply_rule()`]. Very slow.
+    pub fn apply_rule_ref(&mut self, rule: &Rule3) {
         #[cfg(feature = "trace")]
-        let _span = info_span!("smooth3").entered();
+        let _span = info_span!("apply_rule3").entered();
 
         let imax = self.size.x - 1;
         let jmax = self.size.y - 1;
@@ -985,33 +1068,53 @@ mod tests {
 
     #[test]
     fn rulebitset3() {
-        let r0 = RuleBitset3::from(0xFF00);
-        assert_eq!(r0.to_bits(), 0xFF00);
+        let r0 = RuleBitset3::from(0xFF00u32);
+        assert_eq!(r0, RuleBitset3::from_bits(0xFF00u32));
+        assert_eq!(r0.to_bits(), 0xFF00u32);
         assert_eq!(r0.to_array()[0..8], [false; 8]);
         assert_eq!(r0.to_array()[8..16], [true; 8]);
         assert_eq!(r0.to_array()[16..], [false; 11]);
         assert_eq!(RuleBitset3::from(r0.to_array()), r0);
 
         let r1 = RuleBitset3::from(3u8..7u8);
-        assert_eq!(r1.to_bits(), 0x78);
+        assert_eq!(r1, RuleBitset3::from_bits(0x78u32));
+        assert_eq!(r1.to_bits(), 0x78u32);
         assert_eq!(r1.to_array()[0..3], [false; 3]);
         assert_eq!(r1.to_array()[3..7], [true; 4]);
         assert_eq!(r1.to_array()[7..], [false; 20]);
         assert_eq!(RuleBitset3::from(r1.to_array()), r1);
 
         let r2 = RuleBitset3::from(23u8..=26u8);
-        assert_eq!(r2.to_bits(), 0x780_0000);
+        assert_eq!(r2, RuleBitset3::from_bits(0x780_0000u32));
+        assert_eq!(r2.to_bits(), 0x780_0000u32);
         assert_eq!(r2.to_array()[0..23], [false; 23]);
         assert_eq!(r2.to_array()[23..], [true; 4]);
         assert_eq!(RuleBitset3::from(r2.to_array()), r2);
 
         let r12 = r1 | r2;
-        assert_eq!(r12.to_bits(), 0x780_0078);
+        assert_eq!(r12, RuleBitset3::from_bits(0x780_0078u32));
+        assert_eq!(r12.to_bits(), 0x780_0078u32);
         assert_eq!(r12.to_array()[0..3], [false; 3]);
         assert_eq!(r12.to_array()[3..7], [true; 4]);
         assert_eq!(r12.to_array()[7..23], [false; 16]);
         assert_eq!(r12.to_array()[23..], [true; 4]);
         assert_eq!(RuleBitset3::from(r12.to_array()), r12);
+    }
+
+    #[test]
+    #[should_panic]
+    fn rulebitset3_frombits_invalid() {
+        let _r = RuleBitset3::from_bits(0xFFFF_FFFFu32);
+    }
+
+    #[test]
+    fn rule3_smooth() {
+        // 13-26/13-14,17-19/2/M
+        let rule = Rule3 {
+            birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
+            survive: (13u8..=26u8).into(),
+        };
+        assert_eq!(Rule3::SMOOTH, rule);
     }
 
     fn index(pos: IVec3, size: UVec3) -> usize {
@@ -1201,14 +1304,8 @@ mod tests {
         assert_eq!(grid.data.len(), 1);
         assert_eq!(grid.data[0], !0u64);
 
-        // 13-26/13-14,17-19/2/M
-        let rule = Rule3 {
-            birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
-            survive: (13u8..=26u8).into(),
-        };
-
         // Smoothing will shave off the edges
-        grid.smooth(&rule);
+        grid.apply_rule(&Rule3::SMOOTH);
         for k in 0..4 {
             for j in 0..4 {
                 for i in 0..4 {
@@ -1238,14 +1335,8 @@ mod tests {
             assert_eq!(grid.data[i], !0u64);
         }
 
-        // 13-26/13-14,17-19/2/M
-        let rule = Rule3 {
-            birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
-            survive: (13u8..=26u8).into(),
-        };
-
-        // smoothing will shave off the edges
-        grid.smooth(&rule);
+        // Smoothing will shave off the edges
+        grid.apply_rule(&Rule3::SMOOTH);
         for k in 0..8 {
             for j in 0..8 {
                 for i in 0..8 {

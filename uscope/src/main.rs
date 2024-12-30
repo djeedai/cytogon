@@ -34,11 +34,7 @@ impl Default for Config3d {
     fn default() -> Self {
         Self {
             size: UVec3::new(32, 32, 32),
-            // 13-26/13-14,17-19/2/M
-            rule: Rule3 {
-                birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
-                survive: (13u8..=26u8).into(),
-            },
+            rule: Rule3::SMOOTH,
         }
     }
 }
@@ -272,7 +268,7 @@ fn generate_mesh(
                     #[cfg(feature = "trace")]
                     let _span = info_span!("smooth").entered();
 
-                    cave.smooth(&config_3d.rule);
+                    cave.apply_rule(&config_3d.rule);
                 }
 
                 cave
@@ -310,13 +306,8 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
             let mut cave = Grid3::new(config_3d.size);
             let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
             cave.fill_rand(config.fill_rate, &mut prng);
-            // 13-26/13-14,17-19/2/M
-            let rule = Rule3 {
-                birth: RuleBitset3::from(13u8..=14u8) | (17u8..=19u8).into(),
-                survive: (13u8..=26u8).into(),
-            };
             for _ in 0..config.smooth_iter {
-                cave.smooth(&rule);
+                cave.apply_rule(&Rule3::SMOOTH);
             }
 
             let offset = -config_3d.size.as_vec3() / 2.;
