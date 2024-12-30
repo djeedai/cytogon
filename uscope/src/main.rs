@@ -7,7 +7,7 @@ use bevy::{
     render::mesh::{PrimitiveTopology, VertexAttributeValues},
 };
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use cellular::*;
+use cytogon::*;
 use rand_chacha::ChaCha8Rng;
 use rand_core::SeedableRng as _;
 
@@ -581,7 +581,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Cave Viewer".into(),
+                title: "🔬 μscope".into(),
                 ..default()
             }),
             ..default()

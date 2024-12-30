@@ -1,10 +1,10 @@
 [package]
-name = "viewer"
+name = "uscope"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cellular = { path = "../cellular" }
+cytogon = { path = "../cytogon" }
 bevy = "0.15"
 bevy_egui = "0.31.1"
 rand_core = "0.6.4"
@@ -12,4 +12,4 @@ rand_chacha = "0.3.1"
 
 [features]
 default = ["trace"]
-trace = ["cellular/trace", "bevy/trace_tracy"]
+trace = ["cytogon/trace", "bevy/trace_tracy"]

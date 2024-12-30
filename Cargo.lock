@@ -1494,16 +1494,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cellular"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "glam",
- "rand",
- "tracing",
-]
-
-[[package]]
 name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1828,6 +1818,16 @@ name = "cursor-icon"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96a6ac251f4a2aca6b3f91340350eab87ae57c3f127ffeb585e92bd336717991"
+
+[[package]]
+name = "cytogon"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "rand",
+ "tracing",
+]
 
 [[package]]
 name = "dasp_sample"
@@ -2977,7 +2977,7 @@ dependencies = [
 name = "mkave"
 version = "0.1.0"
 dependencies = [
- "cellular",
+ "cytogon",
  "rand",
 ]
 
@@ -4558,6 +4558,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "uscope"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+ "cytogon",
+ "rand_chacha",
+ "rand_core",
+]
+
+[[package]]
 name = "utf16_iter"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4596,17 +4607,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "viewer"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_egui",
- "cellular",
- "rand_chacha",
- "rand_core",
-]
 
 [[package]]
 name = "walkdir"
