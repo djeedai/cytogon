@@ -1,8 +1,0 @@
-[package]
-name = "mkave"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-cytogon = { path = "../cytogon" }
-rand = "0.8.5"

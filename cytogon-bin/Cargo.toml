@@ -1,24 +1,15 @@
 [package]
-name = "cytogon"
+name = "cytogon-bin"
 version = "0.1.0"
 authors = ["Jerome Humbert <djeedai@gmail.com>"]
 edition = "2021"
-description = "Mesh generation library based on cellular automaton"
+description = "Mesh generation CLI tool based on cellular automaton"
 repository = "https://github.com/djeedai/cytogon"
 homepage = "https://github.com/djeedai/cytogon"
-documentation = "https://docs.rs/cytogon"
 keywords = ["mesh", "geometry", "2d", "3d", "procedural", "cellular-automaton"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
 [dependencies]
-bytemuck = "1.21.0"
-glam = "0.29.2"
+cytogon = { version = "0.1.0", path = "../cytogon" }
 rand = "0.8.5"
-tracing = { version = "0.1.41", optional = true }
-
-[features]
-default = []
-
-# Emit tracing/profiling markers
-trace = ["dep:tracing"]

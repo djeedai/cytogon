@@ -1,10 +1,18 @@
 [package]
 name = "uscope"
 version = "0.1.0"
+authors = ["Jerome Humbert <djeedai@gmail.com>"]
 edition = "2021"
+description = "Cytogon GUI"
+repository = "https://github.com/djeedai/cytogon"
+homepage = "https://github.com/djeedai/cytogon"
+documentation = "https://docs.rs/cytogon"
+keywords = ["mesh", "geometry", "procedural", "cellular-automaton", "viewer"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
 
 [dependencies]
-cytogon = { path = "../cytogon" }
+cytogon = { version = "0.1.0", path = "../cytogon" }
 bevy = "0.15"
 bevy_egui = "0.31.1"
 rand_core = "0.6.4"
