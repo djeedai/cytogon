@@ -6,7 +6,7 @@ edition = "2021"
 description = "Mesh generation library based on cellular automata"
 repository = "https://github.com/djeedai/cytogon"
 homepage = "https://github.com/djeedai/cytogon"
-keywords = ["mesh", "geometry", "2d", "3d", "procedural", "cellular-automaton"]
+keywords = ["mesh", "geometry", "procedural", "cellular-automaton", "cli"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
