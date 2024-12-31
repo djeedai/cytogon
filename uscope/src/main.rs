@@ -6,7 +6,10 @@ use bevy::{
     prelude::*,
     render::mesh::{PrimitiveTopology, VertexAttributeValues},
 };
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{
+    egui::{self, CollapsingHeader, Rounding},
+    EguiContexts, EguiPlugin,
+};
 use cytogon::*;
 use rand_chacha::ChaCha8Rng;
 use rand_core::SeedableRng as _;
@@ -52,7 +55,7 @@ impl Default for ConfigNd {
 }
 
 #[derive(Resource, Clone, PartialEq)]
-struct Config {
+struct Settings {
     pub seed: u64,
     pub auto_regenerate: bool,
     pub fill_rate: f32,
@@ -62,7 +65,7 @@ struct Config {
     pub material: Handle<StandardMaterial>,
 }
 
-impl Default for Config {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             seed: 42,
@@ -76,7 +79,7 @@ impl Default for Config {
     }
 }
 
-impl Config {
+impl Settings {
     /// Default configuration for 2D.
     pub fn default_2d() -> Self {
         Self {
@@ -126,7 +129,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut config: ResMut<Config>,
+    mut config: ResMut<Settings>,
 ) {
     // camera
     commands.spawn((
@@ -174,68 +177,88 @@ pub fn close_on_esc(mut ev_app_exit: EventWriter<AppExit>, input: Res<ButtonInpu
     }
 }
 
-fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
-    egui::Window::new("Config").show(contexts.ctx_mut(), |ui| {
-        let mut old_config = config.clone();
+/// Setup UI theme after egui was initialized.
+fn setup_ui(mut contexts: EguiContexts) {
+    let Some(ctx) = contexts.try_ctx_mut() else {
+        return;
+    };
 
-        let mut size = match &old_config.config_nd {
+    ctx.style_mut_of(egui::Theme::Dark, |style| {
+        style
+            .text_styles
+            .get_mut(&egui::TextStyle::Heading)
+            .map(|ts| ts.size = 14.0);
+        style.visuals.window_rounding = Rounding::ZERO;
+        style.visuals.button_frame = true;
+        style.visuals.collapsing_header_frame = true;
+        style.visuals.indent_has_left_vline = false;
+        style.visuals.slider_trailing_fill = true;
+    });
+}
+
+fn ui_settings(mut contexts: EguiContexts, mut settings: ResMut<Settings>) {
+    egui::Window::new("Settings").show(contexts.ctx_mut(), |ui| {
+        let mut prev_settings = settings.clone();
+
+        let mut size = match &prev_settings.config_nd {
             ConfigNd::D2(config_2d) => config_2d.size.x,
             ConfigNd::D3(config_3d) => config_3d.size.x,
         };
-        ui.add(egui::Slider::new(&mut size, 4..=128).text("Size"));
+        ui.add(egui::Slider::new(&mut size, 4..=128).text("Grid size"));
 
-        ui.separator();
+        CollapsingHeader::new("Initial fill")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::Slider::new(&mut prev_settings.fill_rate, 0.0..=1.0).text("Fill rate"),
+                );
+            });
 
-        ui.label("Initial fill");
-        ui.indent(1, |ui| {
-            ui.add(egui::Slider::new(&mut old_config.fill_rate, 0.0..=1.0).text("Fill rate"));
-            ui.add(
-                egui::Slider::new(&mut old_config.smooth_iter, 0..=50).text("Smooth iterations"),
-            );
-        });
-
-        ui.separator();
-
-        match &mut old_config.config_nd {
+        match &mut prev_settings.config_nd {
             ConfigNd::D3(config_3d) => {
                 config_3d.size = UVec3::splat(size);
 
-                ui.label("Rule");
-                ui.indent(1, |ui| {
-                    ui.label("Birth");
-                    let mut bits = config_3d.rule.birth.to_array();
-                    ui.checkbox(&mut bits[0], "0");
-                    ui.horizontal(|ui| {
-                        for b in &mut bits[1..13] {
-                            ui.checkbox(b, "");
-                        }
-                        ui.checkbox(&mut bits[13], "13");
-                    });
-                    ui.horizontal(|ui| {
-                        for b in &mut bits[14..26] {
-                            ui.checkbox(b, "");
-                        }
-                        ui.checkbox(&mut bits[26], "26");
-                    });
-                    config_3d.rule.birth = bits.into();
+                CollapsingHeader::new("Rule")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut prev_settings.smooth_iter, 0..=50)
+                                .text("Repeat count"),
+                        );
+                        ui.label("Birth");
+                        let mut bits = config_3d.rule.birth.to_array();
+                        ui.checkbox(&mut bits[0], "0");
+                        ui.horizontal(|ui| {
+                            for b in &mut bits[1..13] {
+                                ui.checkbox(b, "");
+                            }
+                            ui.checkbox(&mut bits[13], "13");
+                        });
+                        ui.horizontal(|ui| {
+                            for b in &mut bits[14..26] {
+                                ui.checkbox(b, "");
+                            }
+                            ui.checkbox(&mut bits[26], "26");
+                        });
+                        config_3d.rule.birth = bits.into();
 
-                    ui.label("Survive");
-                    let mut bits = config_3d.rule.survive.to_array();
-                    ui.checkbox(&mut bits[0], "0");
-                    ui.horizontal(|ui| {
-                        for b in &mut bits[1..13] {
-                            ui.checkbox(b, "");
-                        }
-                        ui.checkbox(&mut bits[13], "13");
+                        ui.label("Survive");
+                        let mut bits = config_3d.rule.survive.to_array();
+                        ui.checkbox(&mut bits[0], "0");
+                        ui.horizontal(|ui| {
+                            for b in &mut bits[1..13] {
+                                ui.checkbox(b, "");
+                            }
+                            ui.checkbox(&mut bits[13], "13");
+                        });
+                        ui.horizontal(|ui| {
+                            for b in &mut bits[14..26] {
+                                ui.checkbox(b, "");
+                            }
+                            ui.checkbox(&mut bits[26], "26");
+                        });
+                        config_3d.rule.survive = bits.into();
                     });
-                    ui.horizontal(|ui| {
-                        for b in &mut bits[14..26] {
-                            ui.checkbox(b, "");
-                        }
-                        ui.checkbox(&mut bits[26], "26");
-                    });
-                    config_3d.rule.survive = bits.into();
-                });
             }
             ConfigNd::D2(config_2d) => {
                 config_2d.size = UVec2::splat(size);
@@ -244,20 +267,23 @@ fn ui_config(mut contexts: EguiContexts, mut config: ResMut<Config>) {
 
         ui.separator();
 
-        ui.checkbox(&mut old_config.auto_regenerate, "Auto-regenerate");
-        if !old_config.auto_regenerate && ui.button("Regenerate").clicked() {
+        ui.checkbox(
+            &mut prev_settings.auto_regenerate,
+            "Auto-regenerate on change",
+        );
+        if !prev_settings.auto_regenerate && ui.button("Regenerate").clicked() {
             // Just "touch" the config to mark it changed, which will trigger a regenerate
-            config.set_changed();
+            settings.set_changed();
         }
 
         // Ensure we don't trigger the Bevy change detection if nothing changed
-        config.set_if_neq(old_config);
+        settings.set_if_neq(prev_settings);
     });
 }
 
 fn generate_mesh(
     mut meshes: ResMut<Assets<Mesh>>,
-    config: Res<Config>,
+    config: Res<Settings>,
     q_root: Query<&Mesh3d, With<Root>>,
 ) {
     if !config.is_changed() {
@@ -310,8 +336,12 @@ fn generate_mesh(
     }
 }
 
-fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Entity, With<Root>>) {
-    if !config.is_changed() || !config.auto_regenerate {
+fn generate_cubes(
+    mut commands: Commands,
+    settings: Res<Settings>,
+    q_root: Query<Entity, With<Root>>,
+) {
+    if !settings.is_changed() || !settings.auto_regenerate {
         return;
     }
 
@@ -320,12 +350,12 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
     cmd.despawn_descendants();
 
     // Spawn new cubes
-    cmd.with_children(|parent| match &config.config_nd {
+    cmd.with_children(|parent| match &settings.config_nd {
         ConfigNd::D3(config_3d) => {
             let mut cave = Grid3::new(config_3d.size);
-            let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
-            cave.fill_rand(config.fill_rate, &mut prng);
-            for _ in 0..config.smooth_iter {
+            let mut prng = ChaCha8Rng::seed_from_u64(settings.seed);
+            cave.fill_rand(settings.fill_rate, &mut prng);
+            for _ in 0..settings.smooth_iter {
                 cave.apply_rule(&Rule3::SMOOTH);
             }
 
@@ -336,8 +366,8 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
                         let pos = IVec3::new(i as i32, j as i32, k as i32);
                         if cave.cell(pos).unwrap_or(false) {
                             parent.spawn((
-                                Mesh3d(config.mesh.clone()),
-                                MeshMaterial3d(config.material.clone()),
+                                Mesh3d(settings.mesh.clone()),
+                                MeshMaterial3d(settings.material.clone()),
                                 Transform::from_translation(offset + pos.as_vec3()),
                             ));
                         }
@@ -348,8 +378,8 @@ fn generate_cubes(mut commands: Commands, config: Res<Config>, q_root: Query<Ent
 
         ConfigNd::D2(config_2d) => {
             let mut cave = Grid2::new(config_2d.size);
-            let mut prng = ChaCha8Rng::seed_from_u64(config.seed);
-            cave.fill_rand(config.fill_rate, &mut prng);
+            let mut prng = ChaCha8Rng::seed_from_u64(settings.seed);
+            cave.fill_rand(settings.fill_rate, &mut prng);
         }
     });
 }
@@ -597,11 +627,15 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin)
-        .init_resource::<Config>()
+        .init_resource::<Settings>()
         .init_resource::<CameraSettings>()
         .add_systems(Startup, setup)
+        .add_systems(
+            Startup,
+            setup_ui.after(bevy_egui::EguiStartupSet::InitContexts),
+        )
         .add_systems(Update, close_on_esc)
-        .add_systems(Update, ui_config)
+        .add_systems(Update, ui_settings)
         .add_systems(Update, orbit_camera)
         //.add_systems(PostUpdate, generate_cubes)
         .add_systems(PostUpdate, generate_mesh)
